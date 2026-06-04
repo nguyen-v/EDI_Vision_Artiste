@@ -1,0 +1,39 @@
+Arduino UNO
+
+Buttons:
+
+B1: D8 (CHOICE 1)
+B2: A0 (CHOICE 2)
+B3: A1 (CHOICE 3)
+B4: D9 (CHOICE 4)
+B5: A2 (RESET / START — idle: démarre le quiz ; pendant le quiz: retour idle)
+
+Language selector:
+Pins D4-5-6-7
+
+Medeawiz: SoftwareSerial 9600 8N1 (not USB Serial on D0/D1)
+  Send ONE binary byte: write(51) plays 051.xxx (not Serial.print "51")
+  Wire Arduino TX -> Sprite RX; GND common. D11/D13 RX not wired (pull-up in firmware)
+
+WIZ 1: SoftwareSerial(11, 10)  — TX D10 to Sprite
+WIZ 2: SoftwareSerial(13, 12)  — TX D12 to Sprite
+
+Context:
+
+This project is as follows:
+The user is asked a question, which is displayed on a screen (could be wiz1 or wiz2) by playing the correct media.
+Then the user can click one of the four buttons, which sets a "pending" answer (so we can change our answer as long as confirm is not pressed). The confirm button then confirms the answer.
+Each answer is categorized and saved under a category.
+
+After an asnwer, the user is asked the next question and so on.
+
+At the end of the questionnaire, we display the user's personality (also one of the media) depending on the answers he asked
+Right now this categorisation can simply be done by taking which answer category is more represented (this should be easy to change later)
+
+Throughout the questionaire, he should be able to change the language (language selector) which plays the current media in another language (so another media on the disk)
+
+The 2 screens (medeawiz) is because one of the screen has a question and the other a picture with an image (language agnostic)
+
+The screen that has the question and the other screen that has the image could have their roles swapped between questions
+
+There should be a location where I could set this mapping very easily

@@ -1,0 +1,49 @@
+filename,file_index,player,orientation,language,role,label,width,height,duration_s
+000.mp4,0,WIZ1,portrait,EN,Idle intro text,Out of the shadows / artist?!,1920,1080,600
+032.mp4,32,WIZ1,portrait,FR,Idle intro text,Sors de l'ombre / l'artiste?!,1920,1080,600
+064.mp4,64,WIZ1,portrait,DE,Idle intro text,Aus dem Schatten / Künstler?!,1920,1080,600
+096.mp4,96,WIZ1,portrait,IT,Idle intro text,Fuori dall'ombra / artista?!,1920,1080,600
+001.mp4,1,WIZ1,portrait,,Artwork Q1,Artwork Q1 / Caravaggio - Supper at Emmaus,1920,1080,70
+002.mp4,2,WIZ1,portrait,EN,Question text Q2,Q2 / Monet - Rouen Cathedrals,1920,1080,70
+034.mp4,34,WIZ1,portrait,FR,Question text Q2,Q2 / Monet - Rouen Cathedrals,1920,1080,70
+066.mp4,66,WIZ1,portrait,DE,Question text Q2,Q2 / Monet - Rouen Cathedrals,1920,1080,70
+098.mp4,98,WIZ1,portrait,IT,Question text Q2,Q2 / Monet - Rouen Cathedrals,1920,1080,70
+003.mp4,3,WIZ1,portrait,EN,Question text Q3,Q3 / Magritte - Empire of Light,1920,1080,70
+035.mp4,35,WIZ1,portrait,FR,Question text Q3,Q3 / Magritte - Empire of Light,1920,1080,70
+067.mp4,67,WIZ1,portrait,DE,Question text Q3,Q3 / Magritte - Empire of Light,1920,1080,70
+099.mp4,99,WIZ1,portrait,IT,Question text Q3,Q3 / Magritte - Empire of Light,1920,1080,70
+004.mp4,4,WIZ1,portrait,,Artwork Q4,Artwork Q4 / Delaunay / Kirchner - night landscape,1920,1080,70
+005.mp4,5,WIZ1,portrait,,Artwork Q5,Artwork Q5 / Van Gogh - Starry Night,1920,1080,70
+006.mp4,6,WIZ1,portrait,,Artwork Q6,Artwork Q6 / Hopper - Nighthawks (Q6A),1920,1080,70
+007.mp4,7,WIZ1,portrait,,Artwork Q7,Artwork Q7 / Hopper - Night Windows (Q6B),1920,1080,70
+008.mp4,8,WIZ1,portrait,EN,Question text Q8,Q8 / Photo - Sudek / Brassai (Q7),1920,1080,70
+040.mp4,40,WIZ1,portrait,FR,Question text Q8,Q8 / Photo - Sudek / Brassai (Q7),1920,1080,70
+072.mp4,72,WIZ1,portrait,DE,Question text Q8,Q8 / Photo - Sudek / Brassai (Q7),1920,1080,70
+104.mp4,104,WIZ1,portrait,IT,Question text Q8,Q8 / Photo - Sudek / Brassai (Q7),1920,1080,70
+009.mp4,9,WIZ1,portrait,,Artwork Q9,Artwork Q9 / Fuseli - The Nightmare,1920,1080,70
+010.mp4,10,WIZ1,portrait,,Artwork Q10,Artwork Q10 / Soulages - Outrenoir,1920,1080,70
+011.mp4,11,WIZ1,portrait,EN,Question text Q11,Q11 / Vallotton - The Bibliophile,1920,1080,70
+043.mp4,43,WIZ1,portrait,FR,Question text Q11,Q11 / Vallotton - The Bibliophile,1920,1080,70
+075.mp4,75,WIZ1,portrait,DE,Question text Q11,Q11 / Vallotton - The Bibliophile,1920,1080,70
+107.mp4,107,WIZ1,portrait,IT,Question text Q11,Q11 / Vallotton - The Bibliophile,1920,1080,70
+012.mp4,12,WIZ1,portrait,,Artwork Q12,Artwork Q12 / Grandville - Cast Shadows,1920,1080,70
+013.mp4,13,WIZ1,portrait,EN,Question text Q13,Q13 / Your work - final 4 motifs Q12,1920,1080,70
+045.mp4,45,WIZ1,portrait,FR,Question text Q13,Q13 / Your work - final 4 motifs Q12,1920,1080,70
+077.mp4,77,WIZ1,portrait,DE,Question text Q13,Q13 / Your work - final 4 motifs Q12,1920,1080,70
+109.mp4,109,WIZ1,portrait,IT,Question text Q13,Q13 / Your work - final 4 motifs Q12,1920,1080,70
+017.mp4,17,WIZ1,portrait,EN,Profile Emotions,Profile – Poetic / Emotions,1920,1080,60
+049.mp4,49,WIZ1,portrait,FR,Profile Emotions,Profil – Poétique / Émotions,1920,1080,60
+081.mp4,81,WIZ1,portrait,DE,Profile Emotions,Profil – Poetisch / Emotionen,1920,1080,60
+113.mp4,113,WIZ1,portrait,IT,Profile Emotions,Profilo – Poetico / Emozioni,1920,1080,60
+018.mp4,18,WIZ1,portrait,EN,Profile Realiste,Profile – Realist / Precision,1920,1080,60
+050.mp4,50,WIZ1,portrait,FR,Profile Realiste,Profil – Réaliste / Précision,1920,1080,60
+082.mp4,82,WIZ1,portrait,DE,Profile Realiste,Profil – Realist / Präzision,1920,1080,60
+114.mp4,114,WIZ1,portrait,IT,Profile Realiste,Profilo – Realista / Precisione,1920,1080,60
+019.mp4,19,WIZ1,portrait,EN,Profile Matiere,Profile – Matter / Texture,1920,1080,60
+051.mp4,51,WIZ1,portrait,FR,Profile Matiere,Profil – Matière,1920,1080,60
+083.mp4,83,WIZ1,portrait,DE,Profile Matiere,Profil – Materie,1920,1080,60
+115.mp4,115,WIZ1,portrait,IT,Profile Matiere,Profilo – Materia,1920,1080,60
+020.mp4,20,WIZ1,portrait,EN,Profile Conteur,Profile – Storyteller,1920,1080,60
+052.mp4,52,WIZ1,portrait,FR,Profile Conteur,Profil – Conteur,1920,1080,60
+084.mp4,84,WIZ1,portrait,DE,Profile Conteur,Profil – Erzähler,1920,1080,60
+116.mp4,116,WIZ1,portrait,IT,Profile Conteur,Profilo – Narratore,1920,1080,60
