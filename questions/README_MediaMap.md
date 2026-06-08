@@ -6,12 +6,16 @@ File: **`MediaMap_workbook.xlsx`** (English)
 
 1. Open **Questions**.
 2. Fill the first empty **Artwork** row (rows 4?27).
-3. Set **Question plays on** (dropdown) and **B1?B4** profiles.
+3. Set **Question plays on** (dropdown) and the **score grid** (columns M–AB).
 4. **Step** updates automatically. **Image index** and SD file names are computed (no manual file numbers).
 5. Copy **CodeGen** column A into `QuestionnaireConfig.h` (or use `--emit-cpp`).
-6. Run `python3 scripts/generate_media_workbook.py` to refresh **SD WIZ1** / **SD WIZ2**.
+6. **SD WIZ1** / **SD WIZ2** follow the Questions sheet automatically (open/recalculate in Excel or LibreOffice).
 
 SD file numbering: same slot index on both cards per step (questions 1-13 use indices 1-13). **Idle text** = 4 language files on WIZ1 (`000`, `032`, ...). **Idle artwork** = single `000.mp4` on WIZ2. **Profiles** = indices **17-20** (text per language on WIZ1, one artwork per profile on WIZ2) so they do not overlap the last question at index 13.
+
+## Scoring (weighted profiles)
+
+Each answer adds **0–10 points per profile** (see the **B1–B4 score grid** on the Questions sheet: columns M–AB). Default template when a row is created: one profile gets **10**, the others **0** per button. Totals are summed across all steps; highest wins. Edit the grid in the workbook, then run `python3 scripts/generate_media_workbook.py --emit-cpp` and update `QuestionnaireConfig.h`.
 
 ## Video files (SD content)
 
@@ -72,4 +76,4 @@ Requires **ffmpeg** on `PATH` and `pip install openpyxl` (workbook import).
 
 ## Tie-break
 
-Emotions, then Conteur, then Matiere, then Realiste.
+If two profiles reach the **exact same total** after weighted scoring: Emotions, then Conteur, then Matiere, then Realiste.

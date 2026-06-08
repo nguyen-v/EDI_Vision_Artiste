@@ -9,6 +9,8 @@
  *   CAT_MATIERE   — L'artiste de la matière
  *   CAT_CONTEUR   — L'artiste conteur
  *
+ * Scoring: each answer adds choiceWeights[button][category] (0–10) to categoryScores[].
+ *
  * Fichiers (écran question, par langue) — bloc de FILES_PER_LANGUAGE :
  *   offset 0 = écran d'attente (intro / idle)
  *   offset 1..N = texte question (questionFileOffset par étape du quiz)
@@ -51,7 +53,10 @@ static const uint8_t PERSONALITY_FILE_BASE_OFFSET = 17;
 
 static const uint8_t IDLE_IMAGE_FILE = 0;
 
-// En cas d'égalité : premier profil listé ici qui atteint le score max l'emporte.
+static const uint8_t SCORE_WEIGHT_MIN = 0;
+static const uint8_t SCORE_WEIGHT_MAX = 10;
+
+// En cas d'égalité de score total : premier profil listé ici l'emporte.
 static const uint8_t TIEBREAK_ORDER[NUM_CATEGORIES] = {
   CAT_EMOTIONS,
   CAT_CONTEUR,
@@ -84,12 +89,12 @@ enum QuestionScreen : uint8_t {
 
 struct QuestionEntry {
   uint8_t questionFileOffset;
-  uint8_t choiceCategories[NUM_CHOICES];
   QuestionScreen questionScreen;
+  uint8_t choiceWeights[NUM_CHOICES][NUM_CATEGORIES];
 };
 
 /**
- * choiceCategories : boutons B1..B4 (ordre du texte fourni pour chaque question).
+ * choiceWeights : points 0–10 per category when B1..B4 is pressed (workbook score grid).
  * questionFileOffset : SD text file index (= step 1..N), set automatically by the workbook.
  * Image file index = questionFileOffset (same slot on the artwork SD card).
  * Regenerer QUESTIONS[] depuis le classeur (CodeGen) ou --emit-cpp.
@@ -97,30 +102,32 @@ struct QuestionEntry {
 // --- BEGIN_QUESTIONNAIRE_CONFIG ---
 static const uint8_t NUM_QUESTIONS = 13;
 static const QuestionEntry QUESTIONS[NUM_QUESTIONS] = {
-  { 1, { CAT_EMOTIONS, CAT_REALISTE, CAT_MATIERE, CAT_CONTEUR }, Landscape },
-  { 2, { CAT_CONTEUR, CAT_REALISTE, CAT_MATIERE, CAT_EMOTIONS }, Portrait },
-  { 3, { CAT_EMOTIONS, CAT_REALISTE, CAT_MATIERE, CAT_CONTEUR }, Portrait },
-  { 4, { CAT_EMOTIONS, CAT_REALISTE, CAT_MATIERE, CAT_CONTEUR }, Landscape },
-  { 5, { CAT_EMOTIONS, CAT_REALISTE, CAT_MATIERE, CAT_CONTEUR }, Landscape },
-  { 6, { CAT_EMOTIONS, CAT_CONTEUR, CAT_MATIERE, CAT_REALISTE }, Landscape },
-  { 7, { CAT_REALISTE, CAT_MATIERE, CAT_CONTEUR, CAT_EMOTIONS }, Landscape },
-  { 8, { CAT_MATIERE, CAT_CONTEUR, CAT_REALISTE, CAT_EMOTIONS }, Portrait },
-  { 9, { CAT_EMOTIONS, CAT_CONTEUR, CAT_REALISTE, CAT_MATIERE }, Landscape },
-  { 10, { CAT_MATIERE, CAT_CONTEUR, CAT_REALISTE, CAT_EMOTIONS }, Landscape },
-  { 11, { CAT_EMOTIONS, CAT_CONTEUR, CAT_REALISTE, CAT_MATIERE }, Portrait },
-  { 12, { CAT_REALISTE, CAT_EMOTIONS, CAT_MATIERE, CAT_CONTEUR }, Landscape },
-  { 13, { CAT_EMOTIONS, CAT_CONTEUR, CAT_REALISTE, CAT_MATIERE }, Portrait },
-
-
-
-
-
-
-
-
-
-
-
+  // Step 1 - Caravaggio - Supper at Emmaus
+  { 1, Landscape, { { 10, 0, 0, 0 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 } } },
+  // Step 2 - Monet - Rouen Cathedrals
+  { 2, Portrait, { { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 10, 0, 0, 0 } } },
+  // Step 3 - Magritte - Empire of Light
+  { 3, Portrait, { { 10, 0, 0, 0 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 } } },
+  // Step 4 - Delaunay / Kirchner - night landscape
+  { 4, Landscape, { { 10, 0, 0, 0 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 } } },
+  // Step 5 - Van Gogh - Starry Night
+  { 5, Landscape, { { 10, 0, 0, 0 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 } } },
+  // Step 6 - Hopper - Nighthawks (Q6A)
+  { 6, Landscape, { { 10, 0, 0, 0 }, { 0, 0, 0, 10 }, { 0, 0, 10, 0 }, { 0, 10, 0, 0 } } },
+  // Step 7 - Hopper - Night Windows (Q6B)
+  { 7, Landscape, { { 0, 10, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 }, { 10, 0, 0, 0 } } },
+  // Step 8 - Photo - Sudek / Brassai (Q7)
+  { 8, Portrait, { { 0, 0, 10, 0 }, { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 10, 0, 0, 0 } } },
+  // Step 9 - Fuseli - The Nightmare
+  { 9, Landscape, { { 10, 0, 0, 0 }, { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 } } },
+  // Step 10 - Soulages - Outrenoir
+  { 10, Landscape, { { 0, 0, 10, 0 }, { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 10, 0, 0, 0 } } },
+  // Step 11 - Vallotton - The Bibliophile
+  { 11, Portrait, { { 10, 0, 0, 0 }, { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 } } },
+  // Step 12 - Grandville - Cast Shadows
+  { 12, Landscape, { { 0, 10, 0, 0 }, { 10, 0, 0, 0 }, { 0, 0, 10, 0 }, { 0, 0, 0, 10 } } },
+  // Step 13 - Your work - final 4 motifs Q12
+  { 13, Portrait, { { 10, 0, 0, 0 }, { 0, 0, 0, 10 }, { 0, 10, 0, 0 }, { 0, 0, 10, 0 } } },
 };
 // --- END_QUESTIONNAIRE_CONFIG ---
 
@@ -197,11 +204,35 @@ inline uint8_t imageFile(uint8_t questionIndex) {
   return questionFileOffset(questionIndex);
 }
 
-inline uint8_t categoryForChoice(uint8_t questionIndex, uint8_t choice) {
+inline void applyChoiceScore(
+  uint8_t questionIndex,
+  uint8_t choice,
+  uint16_t scores[NUM_CATEGORIES]
+) {
+  if (questionIndex >= NUM_QUESTIONS || choice >= NUM_CHOICES) {
+    return;
+  }
+  const QuestionEntry &entry = QUESTIONS[questionIndex];
+  for (uint8_t c = 0; c < NUM_CATEGORIES; c++) {
+    scores[c] += entry.choiceWeights[choice][c];
+  }
+}
+
+inline uint8_t dominantCategoryForChoice(uint8_t questionIndex, uint8_t choice) {
   if (questionIndex >= NUM_QUESTIONS || choice >= NUM_CHOICES) {
     return CAT_EMOTIONS;
   }
-  return QUESTIONS[questionIndex].choiceCategories[choice];
+  const QuestionEntry &entry = QUESTIONS[questionIndex];
+  uint8_t best = 0;
+  uint8_t bestWeight = 0;
+  for (uint8_t c = 0; c < NUM_CATEGORIES; c++) {
+    const uint8_t w = entry.choiceWeights[choice][c];
+    if (w > bestWeight) {
+      bestWeight = w;
+      best = c;
+    }
+  }
+  return best;
 }
 
 inline const char *personalityName(uint8_t category) {
@@ -211,19 +242,19 @@ inline const char *personalityName(uint8_t category) {
   return PERSONALITY_NAMES[category];
 }
 
-inline uint8_t resultCategory(const uint8_t counts[NUM_CATEGORIES]) {
-  uint8_t maxCount = 0;
+inline uint8_t resultCategory(const uint16_t scores[NUM_CATEGORIES]) {
+  uint16_t maxScore = 0;
   for (uint8_t c = 0; c < NUM_CATEGORIES; c++) {
-    if (counts[c] > maxCount) {
-      maxCount = counts[c];
+    if (scores[c] > maxScore) {
+      maxScore = scores[c];
     }
   }
-  if (maxCount == 0) {
+  if (maxScore == 0) {
     return TIEBREAK_ORDER[0];
   }
   for (uint8_t i = 0; i < NUM_CATEGORIES; i++) {
     const uint8_t c = TIEBREAK_ORDER[i];
-    if (counts[c] == maxCount) {
+    if (scores[c] == maxScore) {
       return c;
     }
   }

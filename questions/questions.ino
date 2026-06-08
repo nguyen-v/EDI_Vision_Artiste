@@ -60,7 +60,7 @@ LanguageSelector languageSelector(LANGUAGE_PINS, LANGUAGE_DEBOUNCE_MS);
 AppState appState = AppState::Idle;
 uint8_t currentQuestion = 0;
 uint8_t currentLanguage = LanguageSelector::DEFAULT_LANGUAGE;
-uint8_t categoryCounts[NUM_CATEGORIES] = {};
+uint16_t categoryScores[NUM_CATEGORIES] = {};
 unsigned long stateSinceMs = 0;
 
 uint8_t activeWiz1File = 255;
@@ -249,7 +249,7 @@ static void replayCurrentMedia(unsigned long now) {
       playQuestionMedia(currentQuestion, currentLanguage, now);
       break;
     case AppState::Personality:
-      playPersonalityMedia(resultCategory(categoryCounts), currentLanguage, now);
+      playPersonalityMedia(resultCategory(categoryScores), currentLanguage, now);
       break;
   }
 }
@@ -258,16 +258,16 @@ static void replayCurrentMedia(unsigned long now) {
 // Flow
 // =================================================================================================
 
-static void resetCategoryCounts() {
+static void resetCategoryScores() {
   for (uint8_t i = 0; i < NUM_CATEGORIES; i++) {
-    categoryCounts[i] = 0;
+    categoryScores[i] = 0;
   }
 }
 
 static void enterIdle(unsigned long now) {
   appState = AppState::Idle;
   stateSinceMs = now;
-  resetCategoryCounts();
+  resetCategoryScores();
   playIdleMedia(now);
   Serial.println(F("state: IDLE (press reset to start)"));
 }
@@ -282,13 +282,13 @@ static void startQuestion(uint8_t questionIndex, unsigned long now) {
 }
 
 static void startQuiz(unsigned long now) {
-  resetCategoryCounts();
+  resetCategoryScores();
   startQuestion(0, now);
   Serial.println(F("state: quiz started"));
 }
 
 static void enterPersonality(unsigned long now) {
-  const uint8_t category = resultCategory(categoryCounts);
+  const uint8_t category = resultCategory(categoryScores);
 
   appState = AppState::Personality;
   stateSinceMs = now;
@@ -296,6 +296,14 @@ static void enterPersonality(unsigned long now) {
 
   Serial.print(F("your personality is "));
   Serial.println(personalityName(category));
+  Serial.print(F("scores Emo/Rea/Mat/Con: "));
+  for (uint8_t i = 0; i < NUM_CATEGORIES; i++) {
+    if (i > 0) {
+      Serial.print(F("/"));
+    }
+    Serial.print(categoryScores[i]);
+  }
+  Serial.println();
   Serial.print(F("personality files WIZ1="));
   printMedeaWizFile(personalityFile(category, currentLanguage));
   Serial.print(F(" WIZ2="));
@@ -304,13 +312,13 @@ static void enterPersonality(unsigned long now) {
 }
 
 static void selectChoice(uint8_t choice, unsigned long now) {
-  const uint8_t category = categoryForChoice(currentQuestion, choice);
-  categoryCounts[category]++;
+  applyChoiceScore(currentQuestion, choice, categoryScores);
+  const uint8_t dominant = dominantCategoryForChoice(currentQuestion, choice);
 
   Serial.print(F("answer B"));
   Serial.print((int)(choice + 1));
-  Serial.print(F(" -> "));
-  Serial.println(personalityName(category));
+  Serial.print(F(" -> +weights, dominant "));
+  Serial.println(personalityName(dominant));
 
   if (isLastQuestion(currentQuestion)) {
     Serial.println(F("state: last question answered -> PERSONALITY"));

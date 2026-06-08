@@ -58,10 +58,16 @@ def _load_media_workbook():
 _MW = _load_media_workbook()
 WIZ1_SD_ROWS = _MW.WIZ1_SD_ROWS
 WIZ2_SD_ROWS = _MW.WIZ2_SD_ROWS
+WIZ1_FIRST_ROW = _MW.WIZ1_FIRST_ROW
+WIZ2_FIRST_ROW = _MW.WIZ2_FIRST_ROW
+WIZ1_LAST_ROW = _MW.WIZ1_LAST_ROW
+WIZ2_LAST_ROW = _MW.WIZ2_LAST_ROW
+sd_rows_from_workbook = _MW.sd_rows_from_workbook
 DEFAULT_QUESTIONS = _MW.DEFAULT_QUESTIONS
 FILES_PER_LANGUAGE = _MW.FILES_PER_LANGUAGE
 LANG_CODES: Tuple[str, ...] = _MW.LANG_CODES
 CAT_NAMES: Tuple[str, ...] = _MW.CAT_NAMES
+role_has_language_files = _MW.role_has_language_files
 
 # ---------------------------------------------------------------------------
 # Rendering defaults
@@ -184,10 +190,106 @@ def _format_categories(cats: Sequence[int]) -> str:
 
 
 def _role_has_language_variants(role: str) -> bool:
-    """Rows with EN/FR/DE/IT filenames (question text, idle intro, profile text)."""
-    if role.startswith("Question text") or role.startswith("Idle intro"):
-        return True
-    return role.startswith("Profile") and not role.startswith("Profile art")
+    """Same rule as generate_media_workbook.role_has_language_files."""
+    return role_has_language_files(role)
+
+
+def expected_sd_filenames(
+    player: str,
+    sd_rows: Sequence[Tuple],
+    languages: Sequence[str],
+) -> set[str]:
+    """Filenames implied by SD WIZ1/WIZ2 rows (must match build_wiz_clips)."""
+    names: set[str] = set()
+    for role, _qref, file_idx, _desc, _aspect in sd_rows:
+        if _role_has_language_variants(role):
+            for lang_idx, lang in enumerate(LANG_CODES):
+                if lang not in languages:
+                    continue
+                names.add(f"{lang_idx * FILES_PER_LANGUAGE + int(file_idx):03d}.mp4")
+        else:
+            names.add(f"{int(file_idx):03d}.mp4")
+    return names
+
+
+def _sd_row_signatures(sd_rows: Sequence[Tuple]) -> set[tuple[str, int]]:
+    return {(str(r[0]), int(r[2])) for r in sd_rows}
+
+
+def _read_sd_sheet_signatures(ws, first_row: int, last_row: int) -> set[tuple[str, int]]:
+    sigs: set[tuple[str, int]] = set()
+    for row in range(first_row, last_row + 1):
+        role = ws.cell(row=row, column=1).value
+        if role is None or str(role).strip() == "":
+            continue
+        idx_val = ws.cell(row=row, column=3).value
+        try:
+            sigs.add((str(role).strip(), int(idx_val)))
+        except (TypeError, ValueError):
+            continue
+    return sigs
+
+
+def _is_quiz_sd_role(role: str) -> bool:
+    return role.startswith("Question text") or role.startswith("Artwork")
+
+
+def verify_xlsx_sd_sheet_indices(workbook_path: Path) -> List[str]:
+    """Compare SD sheets to SD rows derived from the Questions sheet."""
+    if not workbook_path.is_file():
+        return [f"workbook not found: {workbook_path}"]
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return ["openpyxl required to verify workbook xlsx"]
+
+    try:
+        expected_wiz1, expected_wiz2 = sd_rows_from_workbook(workbook_path)
+    except (ValueError, KeyError, OSError) as exc:
+        return [f"cannot derive SD rows from Questions: {exc}"]
+
+    wb = load_workbook(workbook_path, data_only=True)
+    errors: List[str] = []
+    for sheet_name, expected_rows, first_row, last_row in (
+        ("SD WIZ1", expected_wiz1, WIZ1_FIRST_ROW, WIZ1_LAST_ROW),
+        ("SD WIZ2", expected_wiz2, WIZ2_FIRST_ROW, WIZ2_LAST_ROW),
+    ):
+        if sheet_name not in wb.sheetnames:
+            errors.append(f"{sheet_name}: sheet missing in workbook")
+            continue
+        expected_sig = _sd_row_signatures(expected_rows)
+        from_sheet = _read_sd_sheet_signatures(wb[sheet_name], first_row, last_row)
+        fixed_expected = {s for s in expected_sig if not _is_quiz_sd_role(s[0])}
+        fixed_from = {s for s in from_sheet if not _is_quiz_sd_role(s[0])}
+        if fixed_from != fixed_expected:
+            errors.append(
+                f"{sheet_name}: fixed SD rows {sorted(fixed_from)} != expected {sorted(fixed_expected)}"
+            )
+        quiz_expected = {s for s in expected_sig if _is_quiz_sd_role(s[0])}
+        quiz_from = {s for s in from_sheet if _is_quiz_sd_role(s[0])}
+        if quiz_from and quiz_from != quiz_expected:
+            errors.append(
+                f"{sheet_name}: quiz SD rows {sorted(quiz_from)} != expected {sorted(quiz_expected)}"
+            )
+    return errors
+
+
+def verify_sd_clip_indices(
+    clips: Sequence[Clip],
+    languages: Sequence[str],
+    wiz1_rows: Sequence[Tuple],
+    wiz2_rows: Sequence[Tuple],
+) -> List[str]:
+    """Return human-readable errors if clip list diverges from workbook SD rows."""
+    errors: List[str] = []
+    for player, sd_rows in (("WIZ1", wiz1_rows), ("WIZ2", wiz2_rows)):
+        expected = expected_sd_filenames(player, sd_rows, languages)
+        actual = {c.filename for c in clips if c.player == player}
+        for name in sorted(expected - actual):
+            errors.append(f"{player}: missing clip {name} (workbook SD row)")
+        for name in sorted(actual - expected):
+            errors.append(f"{player}: unexpected clip {name} (not in workbook SD rows)")
+    return errors
 
 
 def build_wiz_clips(
@@ -799,17 +901,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         default=max(1, (os.cpu_count() or 4) - 1),
         help="Parallel ffmpeg jobs (default: CPU count - 1).",
     )
+    p.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Check clip indices against MediaMap SD rows (from generate_media_workbook.py); no encode.",
+    )
     args = p.parse_args(list(argv) if argv is not None else None)
-
-    if shutil.which("ffmpeg") is None:
-        print("error: ffmpeg not found on PATH", file=sys.stderr)
-        return 2
-
-    font = args.font
-    if font is None:
-        font = find_font()
-    else:
-        font = font.replace("\\", "/").replace(":", r"\:")
 
     wanted = {c.strip().upper() for c in args.languages.split(",") if c.strip()}
     unknown = wanted - set(LANG_CODES)
@@ -817,12 +914,18 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(f"error: unknown language(s): {sorted(unknown)}", file=sys.stderr)
         return 2
 
+    workbook_path = _SCRIPT_DIR.parent / "questions" / "MediaMap_workbook.xlsx"
+    try:
+        wiz1_sd_rows, wiz2_sd_rows = sd_rows_from_workbook(workbook_path)
+    except (ValueError, KeyError, OSError):
+        wiz1_sd_rows, wiz2_sd_rows = WIZ1_SD_ROWS, WIZ2_SD_ROWS
+
     clips: List[Clip] = []
     if args.card in ("both", "portrait", "wiz1"):
         clips.extend(
             build_wiz_clips(
                 "WIZ1",
-                WIZ1_SD_ROWS,
+                wiz1_sd_rows,
                 wanted,
                 media_duration=args.media_duration,
                 intro_duration=args.intro_duration,
@@ -833,7 +936,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         clips.extend(
             build_wiz_clips(
                 "WIZ2",
-                WIZ2_SD_ROWS,
+                wiz2_sd_rows,
                 wanted,
                 media_duration=args.media_duration,
                 intro_duration=args.intro_duration,
@@ -848,6 +951,32 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"error: bad --only value: {e}", file=sys.stderr)
             return 2
         clips = [c for c in clips if c.file_index in wanted_indices]
+
+    index_errors = verify_sd_clip_indices(clips, wanted, wiz1_sd_rows, wiz2_sd_rows)
+    index_errors.extend(verify_xlsx_sd_sheet_indices(workbook_path))
+    if index_errors:
+        for err in index_errors:
+            print(f"error: {err}", file=sys.stderr)
+        return 1
+    wiz1_n = len([c for c in clips if c.player == "WIZ1"])
+    wiz2_n = len([c for c in clips if c.player == "WIZ2"])
+    print(
+        f"SD indices OK: {len(clips)} clips ({wiz1_n} WIZ1, {wiz2_n} WIZ2) "
+        f"match generate_media_workbook.py",
+        flush=True,
+    )
+    if args.verify_only:
+        return 0
+
+    if shutil.which("ffmpeg") is None:
+        print("error: ffmpeg not found on PATH", file=sys.stderr)
+        return 2
+
+    font = args.font
+    if font is None:
+        font = find_font()
+    else:
+        font = font.replace("\\", "/").replace(":", r"\:")
 
     portrait_dir = args.out / "sd_wiz1"
     paysage_dir = args.out / "sd_wiz2"

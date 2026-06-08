@@ -5,7 +5,7 @@ Generate MediaMap_workbook.xlsx for Vision Artiste quiz (English UI).
 
 Sheets:
   Guide       - how to use, limits, tie-break
-  Questions   - quiz mapping (editable screen + profiles); drives CodeGen
+  Questions   - quiz mapping (editable screen + score grid); drives CodeGen
   SD WIZ1     - files for portrait display (1080x1920)
   SD WIZ2     - files for landscape display (1920x1080)
   CodeGen     - paste block for QuestionnaireConfig.h
@@ -24,7 +24,7 @@ from typing import List, Sequence, Tuple
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -35,6 +35,7 @@ NUM_LANGUAGES = 4
 FILES_PER_LANGUAGE = 32
 MEDEWIZ_MAX_FILES = 200
 NUM_CHOICES = 4
+NUM_CATEGORIES = 4
 # Initial quiz steps baked into a new workbook (edit or add rows on Questions sheet).
 DEFAULT_NUM_QUESTIONS = 13
 # Extra blank rows with formulas ready (fill the next row to add a step).
@@ -42,6 +43,12 @@ MAX_QUESTION_SLOTS = 24
 LANG_CODES = ("EN", "FR", "DE", "IT")
 CAT_NAMES = ("Emotions", "Realiste", "Matiere", "Conteur")
 CAT_CPP = ("CAT_EMOTIONS", "CAT_REALISTE", "CAT_MATIERE", "CAT_CONTEUR")
+
+# Per-answer points per profile (0–10 on the Questions score grid).
+SCORE_WEIGHT_MIN = 0
+SCORE_WEIGHT_MAX = 10
+SCORE_WEIGHT_PRIMARY = 10
+SCORE_WEIGHT_OTHER = 0
 
 QUESTION_FILE_FIRST_OFFSET = 1
 # Artwork uses the same SD index as question text offset (separate cards, no collision).
@@ -62,16 +69,18 @@ COL_QUESTION_ON = 3
 COL_ARTWORK_ON = 4
 COL_TEXT_OFFSET = 5
 COL_IMAGE_INDEX = 6
-COL_B1 = 7
-COL_TEXT_PLAYER = 11
-COL_ART_PLAYER = 12
-COL_TEXT_ASPECT = 13
-COL_ART_ASPECT = 14
-COL_TEXT_FILE_FR = 15
-COL_ART_FILE = 16
+COL_TEXT_PLAYER = 7
+COL_ART_PLAYER = 8
+COL_TEXT_ASPECT = 9
+COL_ART_ASPECT = 10
+COL_TEXT_FILE_FR = 11
+COL_ART_FILE = 12
+# B1..B4 × Emotions, Realiste, Matiere, Conteur (editable 0–10).
+COL_WEIGHTS = 13
+COL_WEIGHTS_LAST = COL_WEIGHTS + NUM_CHOICES * NUM_CATEGORIES - 1
 
-HIDDEN_CAT_COLS = ("R", "S", "T", "U")
-HIDDEN_LINE_COL = "V"
+HIDDEN_LINE_COL = "AC"
+COL_HIDDEN_LINE = column_index_from_string(HIDDEN_LINE_COL)
 
 CODEGEN_BEGIN_ROW = 4
 CODEGEN_NUM_QUESTIONS_ROW = 5
@@ -97,6 +106,25 @@ INPUT_HEADER_FILL = PatternFill("solid", fgColor="D9D9D9")
 CALC_FILL = PatternFill("solid", fgColor="DDEBF7")
 FILE_HEADER_FILL = PatternFill("solid", fgColor="9BC2E6")
 COPY_FILL = PatternFill("solid", fgColor="FFF2CC")
+# B1–B4 score columns (header, editable cell, calc/read-only in block).
+BUTTON_HEADER_FILLS = (
+    PatternFill("solid", fgColor="9DC3E6"),  # B1 blue
+    PatternFill("solid", fgColor="A9D08E"),  # B2 green
+    PatternFill("solid", fgColor="F4B084"),  # B3 orange
+    PatternFill("solid", fgColor="C9B8D8"),  # B4 purple
+)
+BUTTON_DATA_FILLS = (
+    PatternFill("solid", fgColor="DDEBF7"),
+    PatternFill("solid", fgColor="E2EFDA"),
+    PatternFill("solid", fgColor="FCE4D6"),
+    PatternFill("solid", fgColor="E4DFEC"),
+)
+BUTTON_CALC_FILLS = (
+    PatternFill("solid", fgColor="EDF4FC"),
+    PatternFill("solid", fgColor="F4FAF0"),
+    PatternFill("solid", fgColor="FEF3EC"),
+    PatternFill("solid", fgColor="F5F0FA"),
+)
 SECTION_FONT = Font(bold=True, size=11, color="2F5496")
 HEADER_FONT = Font(bold=True, color="1F3864")
 DATA_FONT = Font(size=11)
@@ -110,7 +138,6 @@ UNLOCKED = Protection(locked=False)
 LOCKED = Protection(locked=True)
 
 SCREEN_LIST = "Portrait,Landscape"
-PROFILE_LIST = ",".join(CAT_NAMES)
 
 
 def screen_from_order_char(ch: str) -> str:
@@ -120,7 +147,7 @@ def screen_from_order_char(ch: str) -> str:
 _SCREEN = [screen_from_order_char(c) for c in QUESTION_SCREEN_ORDER]
 assert len(_SCREEN) == DEFAULT_NUM_QUESTIONS
 
-# (categories, question_on_screen, artwork_title) ? SD file index = step number (hidden)
+# (default B1..B4 primaries, question_on_screen, artwork_title) — primaries seed score grid only.
 DEFAULT_QUESTIONS: Tuple[Tuple[Tuple[int, ...], str, str], ...] = (
     ((0, 1, 2, 3), _SCREEN[0], "Caravaggio - Supper at Emmaus"),
     ((3, 1, 2, 0), _SCREEN[1], "Monet - Rouen Cathedrals"),
@@ -167,31 +194,58 @@ def placement(question_on: str) -> Tuple[str, str, str, str]:
     return "WIZ2", "WIZ1", LANDSCAPE_ASPECT, PORTRAIT_ASPECT
 
 
-def build_sd_slot_rows() -> Tuple[List[Tuple], List[Tuple]]:
-    """Build SD WIZ1 and WIZ2 row tuples from DEFAULT_QUESTIONS."""
+def read_question_entries_from_ws(ws: Worksheet) -> List[Tuple[int, str, str, int, int]]:
+    """Filled Questions rows: (step, question_on, artwork, text_offset, image_index)."""
+    entries: List[Tuple[int, str, str, int, int]] = []
+    for row in iter_question_rows_from_sheet(ws):
+        artwork = str(ws.cell(row=row, column=COL_ARTWORK).value).strip()
+        step_val = ws.cell(row=row, column=COL_QNUM).value
+        try:
+            step = int(step_val)
+        except (TypeError, ValueError):
+            step = row - QUESTIONS_FIRST_ROW + 1
+        question_on = str(ws.cell(row=row, column=COL_QUESTION_ON).value or "Portrait").strip()
+        text_off = ws.cell(row=row, column=COL_TEXT_OFFSET).value
+        img_idx = ws.cell(row=row, column=COL_IMAGE_INDEX).value
+        try:
+            text_offset = int(text_off)
+        except (TypeError, ValueError):
+            text_offset = step
+        try:
+            image_index = int(img_idx)
+        except (TypeError, ValueError):
+            image_index = text_offset
+        entries.append((step, question_on, artwork, text_offset, image_index))
+    return entries
+
+
+def build_sd_slot_rows_from_entries(
+    entries: Sequence[Tuple[int, str, str, int, int]],
+) -> Tuple[List[Tuple], List[Tuple]]:
+    """Build SD WIZ1/WIZ2 row tuples (sorted by file index) from Questions entries."""
     wiz1: List[Tuple] = list(WIZ1_FIXED_ROWS)
     wiz2: List[Tuple] = list(WIZ2_FIXED_ROWS)
 
-    for i, (_cats, question_on, artwork) in enumerate(DEFAULT_QUESTIONS):
-        qref = f"Q{i + 1}"
-        offset = i + 1
-        image_idx = offset + QUESTION_IMAGE_OFFSET_DELTA
+    for step, question_on, artwork, text_offset, image_index in entries:
+        qref = f"Q{step}"
         text_wiz, art_wiz, text_asp, art_asp = placement(question_on)
+        q_screen = "portrait" if question_on == "Portrait" else "landscape"
+        art_screen = "portrait" if art_wiz == "WIZ1" else "landscape"
 
         if text_wiz == "WIZ1":
             wiz1.append((
                 f"Question text {qref}",
                 qref,
-                offset,
-                f"{artwork} (question on portrait screen)",
+                text_offset,
+                f"{artwork} (question on {q_screen} screen)",
                 text_asp,
             ))
         else:
             wiz2.append((
                 f"Question text {qref}",
                 qref,
-                offset,
-                f"{artwork} (question on landscape screen)",
+                text_offset,
+                f"{artwork} (question on {q_screen} screen)",
                 text_asp,
             ))
 
@@ -199,16 +253,16 @@ def build_sd_slot_rows() -> Tuple[List[Tuple], List[Tuple]]:
             wiz1.append((
                 f"Artwork {qref}",
                 qref,
-                image_idx,
-                f"{artwork} (art on portrait screen)",
+                image_index,
+                f"{artwork} (art on {art_screen} screen)",
                 art_asp,
             ))
         else:
             wiz2.append((
                 f"Artwork {qref}",
                 qref,
-                image_idx,
-                f"{artwork} (art on landscape screen)",
+                image_index,
+                f"{artwork} (art on {art_screen} screen)",
                 art_asp,
             ))
 
@@ -217,9 +271,27 @@ def build_sd_slot_rows() -> Tuple[List[Tuple], List[Tuple]]:
     return wiz1, wiz2
 
 
+def build_sd_slot_rows() -> Tuple[List[Tuple], List[Tuple]]:
+    """Default SD rows from DEFAULT_QUESTIONS (used when no workbook is loaded)."""
+    entries = [
+        (i + 1, question_on, artwork, i + 1, i + 1 + QUESTION_IMAGE_OFFSET_DELTA)
+        for i, (_cats, question_on, artwork) in enumerate(DEFAULT_QUESTIONS)
+    ]
+    return build_sd_slot_rows_from_entries(entries)
+
+
+def sd_rows_from_workbook(path: Path) -> Tuple[List[Tuple], List[Tuple]]:
+    """SD row lists derived from the Questions sheet in a saved workbook."""
+    wb = load_workbook(path, data_only=True)
+    if "Questions" not in wb.sheetnames:
+        raise ValueError(f"Questions sheet missing in {path}")
+    return build_sd_slot_rows_from_entries(read_question_entries_from_ws(wb["Questions"]))
+
+
 WIZ1_SD_ROWS, WIZ2_SD_ROWS = build_sd_slot_rows()
-WIZ1_LAST_ROW = WIZ1_FIRST_ROW + len(WIZ1_SD_ROWS) - 1
-WIZ2_LAST_ROW = WIZ2_FIRST_ROW + len(WIZ2_SD_ROWS) - 1
+SD_DYNAMIC_ROWS = MAX_QUESTION_SLOTS * 2
+WIZ1_LAST_ROW = WIZ1_FIRST_ROW + len(WIZ1_FIXED_ROWS) + SD_DYNAMIC_ROWS - 1
+WIZ2_LAST_ROW = WIZ2_FIRST_ROW + len(WIZ2_FIXED_ROWS) + SD_DYNAMIC_ROWS - 1
 
 
 def set_col_widths(ws: Worksheet, widths: Sequence[float]) -> None:
@@ -243,6 +315,36 @@ def enable_sheet_protection(ws: Worksheet) -> None:
     ws.protection.sheet = True
     ws.protection.selectLockedCells = False
     ws.protection.selectUnlockedCells = False
+
+
+def button_choice_index(col: int) -> int | None:
+    """0..3 for B1–B4 score block columns, else None."""
+    if COL_WEIGHTS <= col <= COL_WEIGHTS_LAST:
+        return (col - COL_WEIGHTS) // NUM_CATEGORIES
+    return None
+
+
+def questions_sheet_fill(
+    col: int,
+    *,
+    editable: bool,
+    calc: bool,
+    header: bool,
+) -> PatternFill:
+    choice = button_choice_index(col)
+    if choice is not None:
+        if header:
+            return BUTTON_HEADER_FILLS[choice]
+        if editable:
+            return BUTTON_DATA_FILLS[choice]
+        return BUTTON_CALC_FILLS[choice]
+    if col in (COL_TEXT_FILE_FR, COL_ART_FILE):
+        return FILE_HEADER_FILL if header else CALC_FILL
+    if calc:
+        return CALC_FILL
+    if editable:
+        return EDIT_FILL
+    return INPUT_FILL
 
 
 def style_merged_title(ws, cell_ref, merge_range):
@@ -287,28 +389,39 @@ def file_index_formula(row: int, index_col: str = "C") -> str:
     return f'=IF({ref}="","",TEXT({ref},"000")&".mp4")'
 
 
-def cat_token_formula(row: int, profile_col: str) -> str:
-    ref = f"{profile_col}{row}"
-    t0, t1, t2, t3 = (f'"{t}"' for t in CAT_CPP)
-    return (
-        f'=IF({ref}="","",'
-        f'IF({ref}="Emotions",{t0},'
-        f'IF({ref}="Realiste",{t1},'
-        f'IF({ref}="Matiere",{t2},'
-        f'IF({ref}="Conteur",{t3},{t0})))))'
+def default_weights_for_primary(primary: int) -> Tuple[int, int, int, int]:
+    """Default template for one button: primary profile = 10, others = 0."""
+    weights = [SCORE_WEIGHT_OTHER] * NUM_CATEGORIES
+    if 0 <= primary < NUM_CATEGORIES:
+        weights[primary] = SCORE_WEIGHT_PRIMARY
+    return tuple(weights)
+
+
+def default_weights_for_question(
+    cats: Sequence[int],
+) -> Tuple[Tuple[int, int, int, int], ...]:
+    return tuple(default_weights_for_primary(cats[b]) for b in range(NUM_CHOICES))
+
+
+def zero_weights_for_choice() -> Tuple[int, int, int, int]:
+    return (0, 0, 0, 0)
+
+
+def cpp_question_line(
+    offset: int,
+    screen: str,
+    weights: Sequence[Sequence[int]],
+) -> str:
+    rows = ", ".join(
+        "{ " + ", ".join(str(weights[ch][c]) for c in range(NUM_CATEGORIES)) + " }"
+        for ch in range(NUM_CHOICES)
     )
+    return f"  {{ {offset}, {screen}, {{ {rows} }} }},"
 
 
 def question_line_formula(row: int) -> str:
-    """Empty when Artwork (B) is blank ? same rule as CodeGen row filter."""
     art = f"{get_column_letter(COL_ARTWORK)}{row}"
-    off = f"{get_column_letter(COL_TEXT_OFFSET)}{row}"
-    scr = f"{get_column_letter(COL_QUESTION_ON)}{row}"
-    n, o, p, q = (f"{c}{row}" for c in HIDDEN_CAT_COLS)
-    return (
-        f'=IF({art}="","",'
-        f'"  {{ "&{off}&", {{ "&{n}&", "&{o}&", "&{p}&", "&{q}&" }}, "&{scr}&" }},")'
-    )
+    return f'=IF({art}="","","")'
 
 
 def step_formula(row: int) -> str:
@@ -339,7 +452,7 @@ def fill_question_row(
     ws: Worksheet,
     row: int,
     *,
-    cats: Sequence[int] | None = None,
+    default_cats: Sequence[int] | None = None,
     question_on: str | None = None,
     artwork: str | None = None,
 ) -> None:
@@ -362,9 +475,23 @@ def fill_question_row(
         row=row, column=COL_IMAGE_INDEX,
         value=f"={off_col}{row}+{QUESTION_IMAGE_OFFSET_DELTA}",
     )
-    if cats is not None:
-        for c in range(NUM_CHOICES):
-            ws.cell(row=row, column=COL_B1 + c, value=CAT_NAMES[cats[c]])
+    if default_cats is not None:
+        off_val = row - (QUESTIONS_FIRST_ROW - 1)
+        screen = question_on or "Portrait"
+        weights = default_weights_for_question(default_cats)
+        for choice in range(NUM_CHOICES):
+            w = weights[choice]
+            for cat in range(NUM_CATEGORIES):
+                ws.cell(
+                    row=row,
+                    column=COL_WEIGHTS + choice * NUM_CATEGORIES + cat,
+                    value=w[cat],
+                )
+        ws.cell(
+            row=row,
+            column=COL_HIDDEN_LINE,
+            value=cpp_question_line(off_val, screen, weights),
+        )
     ws.cell(
         row=row, column=COL_TEXT_PLAYER,
         value=f'=IF({q_col}{row}="Portrait","WIZ1","WIZ2")',
@@ -389,12 +516,8 @@ def fill_question_row(
         row=row, column=COL_ART_FILE,
         value=f'=IF({get_column_letter(COL_ARTWORK)}{row}="","",TEXT({img_col}{row},"000")&".mp4")',
     )
-    for cat_col, prof_col in zip(
-        HIDDEN_CAT_COLS,
-        (get_column_letter(COL_B1 + j) for j in range(NUM_CHOICES)),
-    ):
-        ws.cell(row=row, column=ord(cat_col) - 64, value=cat_token_formula(row, prof_col))
-    ws.cell(row=row, column=ord(HIDDEN_LINE_COL) - 64, value=question_line_formula(row))
+    if default_cats is None:
+        ws.cell(row=row, column=COL_HIDDEN_LINE, value=question_line_formula(row))
 
 
 def codegen_question_ref(row: int) -> str:
@@ -420,12 +543,13 @@ def build_guide_sheet(ws: Worksheet) -> None:
         "Index = file number sent to the Sprite.",
         "",
         "Flow: intro (text + art) -> quiz steps -> profile on WIZ1.",
-        "Tie-break order: Emotions, Conteur, Matiere, Realiste.",
+        "Scoring: score grid (columns M–AB) — 0–10 points per profile per button (B1–B4).",
+        "  Sum across steps; highest wins. Tie-break: Emotions, Conteur, Matiere, Realiste.",
         "",
         "Add a question: on Questions sheet, fill the next empty row (Artwork column).",
         "  Step number updates automatically. Copy dropdowns from the row above if needed.",
         "  Then copy CodeGen column A into QuestionnaireConfig.h (NUM_QUESTIONS + QUESTIONS[]).",
-        "  Skip blank lines at the bottom of the array. Re-run this script to refresh SD WIZ1/WIZ2.",
+        "  SD WIZ1 / SD WIZ2 update automatically from Questions (clear Artwork to remove a step).",
         "",
         "Sheets: Questions | SD WIZ1 | SD WIZ2 | CodeGen",
         "",
@@ -452,13 +576,93 @@ def build_guide_sheet(ws: Worksheet) -> None:
     enable_sheet_protection(ws)
 
 
+def _questions_cell(row: int, col: int) -> str:
+    """Excel reference to a Questions sheet cell (sheet name contains a space)."""
+    return f"'Questions'!${get_column_letter(col)}${row}"
+
+
+def _sd_text_active(qrow: int, wiz_player: str) -> str:
+    art = _questions_cell(qrow, COL_ARTWORK)
+    player = _questions_cell(qrow, COL_TEXT_PLAYER)
+    return f'AND({art}<>"",{player}="{wiz_player}")'
+
+
+def _sd_art_active(qrow: int, wiz_player: str) -> str:
+    art = _questions_cell(qrow, COL_ARTWORK)
+    player = _questions_cell(qrow, COL_ART_PLAYER)
+    return f'AND({art}<>"",{player}="{wiz_player}")'
+
+
+def _write_sd_static_row(
+    ws: Worksheet,
+    row: int,
+    row_data: Tuple,
+) -> None:
+    role, qref, file_idx, desc, row_aspect = row_data
+    ws.cell(row=row, column=1, value=role)
+    ws.cell(row=row, column=2, value=qref)
+    ws.cell(row=row, column=3, value=file_idx)
+    ws.cell(row=row, column=4, value=desc)
+    ws.cell(row=row, column=5, value=row_aspect)
+    if role_has_language_files(role):
+        for lang_idx in range(NUM_LANGUAGES):
+            ws.cell(row=row, column=6 + lang_idx, value=lang_filename_formula(row, lang_idx))
+    else:
+        ws.cell(row=row, column=6, value=file_index_formula(row))
+
+
+def _write_sd_question_text_row(ws: Worksheet, row: int, qrow: int, wiz_player: str) -> None:
+    active = _sd_text_active(qrow, wiz_player)
+    step = _questions_cell(qrow, COL_QNUM)
+    art = _questions_cell(qrow, COL_ARTWORK)
+    q_on = _questions_cell(qrow, COL_QUESTION_ON)
+    off = _questions_cell(qrow, COL_TEXT_OFFSET)
+    asp = _questions_cell(qrow, COL_TEXT_ASPECT)
+    screen = f'IF({q_on}="Portrait","portrait","landscape")'
+    ws.cell(row=row, column=1, value=f'=IF({active},"Question text Q"&{step},"")')
+    ws.cell(row=row, column=2, value=f'=IF({active},"Q"&{step},"")')
+    ws.cell(row=row, column=3, value=f"=IF({active},{off},\"\")")
+    ws.cell(
+        row=row, column=4,
+        value=f'=IF({active},{art}&" (question on "&{screen}&" screen)","")',
+    )
+    ws.cell(row=row, column=5, value=f"=IF({active},{asp},\"\")")
+    for lang_idx in range(NUM_LANGUAGES):
+        ws.cell(
+            row=row,
+            column=6 + lang_idx,
+            value=(
+                f'=IF({active},TEXT({FILES_PER_LANGUAGE}*{lang_idx}+'
+                f'{off},"000")&".mp4","")'
+            ),
+        )
+
+
+def _write_sd_artwork_row(ws: Worksheet, row: int, qrow: int, wiz_player: str) -> None:
+    active = _sd_art_active(qrow, wiz_player)
+    step = _questions_cell(qrow, COL_QNUM)
+    art = _questions_cell(qrow, COL_ARTWORK)
+    img = _questions_cell(qrow, COL_IMAGE_INDEX)
+    asp = _questions_cell(qrow, COL_ART_ASPECT)
+    art_screen = "portrait" if wiz_player == "WIZ1" else "landscape"
+    ws.cell(row=row, column=1, value=f'=IF({active},"Artwork Q"&{step},"")')
+    ws.cell(row=row, column=2, value=f'=IF({active},"Q"&{step},"")')
+    ws.cell(row=row, column=3, value=f"=IF({active},{img},\"\")")
+    ws.cell(
+        row=row, column=4,
+        value=f'=IF({active},{art}&" (art on {art_screen} screen)","")',
+    )
+    ws.cell(row=row, column=5, value=f"=IF({active},{asp},\"\")")
+    ws.cell(row=row, column=6, value=f'=IF({active},TEXT({img},"000")&".mp4","")')
+
+
 def build_wiz_sd_sheet(
     ws: Worksheet,
     *,
     title: str,
     wiz_name: str,
-    default_aspect: str,
-    rows: Sequence[Tuple],
+    wiz_player: str,
+    fixed_rows: Sequence[Tuple],
     tab_color: str,
     first_row: int,
     last_row: int,
@@ -470,7 +674,7 @@ def build_wiz_sd_sheet(
     ws["A2"] = (
         "Copy each file to this SD card using the exact name shown. "
         "Encode each row at the Aspect shown (portrait 1080x1920 or landscape 1920x1080). "
-        "Text rows list all 4 languages."
+        "Quiz rows are computed from the Questions sheet; clear Artwork there to drop a step."
     )
     style_instruction_row(ws, "A2", "A2:I2")
     headers = [
@@ -483,32 +687,34 @@ def build_wiz_sd_sheet(
         )
         apply_cell_style(ws.cell(row=3, column=col, value=hdr), fill=fill, font=HEADER_FONT, locked=True)
 
-    for i, row_data in enumerate(rows):
-        row = first_row + i
-        role, qref, file_idx, desc, row_aspect = row_data
-        ws.cell(row=row, column=1, value=role)
-        ws.cell(row=row, column=2, value=qref)
-        ws.cell(row=row, column=3, value=file_idx)
-        ws.cell(row=row, column=4, value=desc)
-        ws.cell(row=row, column=5, value=row_aspect)
-        if role_has_language_files(role):
-            for lang_idx in range(NUM_LANGUAGES):
-                ws.cell(row=row, column=6 + lang_idx, value=lang_filename_formula(row, lang_idx))
-        else:
-            ws.cell(row=row, column=6, value=file_index_formula(row))
+    for i, row_data in enumerate(fixed_rows):
+        _write_sd_static_row(ws, first_row + i, row_data)
+
+    row = first_row + len(fixed_rows)
+    for slot in range(MAX_QUESTION_SLOTS):
+        qrow = QUESTIONS_FIRST_ROW + slot
+        _write_sd_question_text_row(ws, row, qrow, wiz_player)
+        row += 1
+        _write_sd_artwork_row(ws, row, qrow, wiz_player)
+        row += 1
 
     center = Alignment(horizontal="center", vertical="center")
+    dynamic_start = first_row + len(fixed_rows)
     for row in range(first_row, last_row + 1):
-        role = ws.cell(row=row, column=1).value or ""
-        has_langs = role_has_language_files(role)
+        is_fixed = row < dynamic_start
+        if is_fixed:
+            role = ws.cell(row=row, column=1).value or ""
+            has_langs = role_has_language_files(str(role))
+        else:
+            has_langs = (row - dynamic_start) % 2 == 0
         for col in range(1, 10):
             if col >= 7 and not has_langs:
                 continue
-            editable = col == 3
-            calc = col in (5, 6) or col >= 6
+            editable = is_fixed and col == 3
+            calc = not editable
             apply_cell_style(
                 ws.cell(row=row, column=col),
-                fill=EDIT_FILL if editable else (CALC_FILL if calc else INPUT_FILL),
+                fill=EDIT_FILL if editable else CALC_FILL,
                 font=DATA_FONT,
                 alignment=center if col != 4 else Alignment(wrap_text=True, vertical="top"),
                 border=DATA_BORDER,
@@ -522,24 +728,20 @@ def build_wiz_sd_sheet(
 def build_questions_sheet(ws: Worksheet) -> None:
     ws.title = "Questions"
     ws.sheet_properties.tabColor = "C55A11"
-    style_merged_title(ws, "A1", "A1:P1")
-    ws["A1"] = "Quiz steps - screens and profiles"
+    style_merged_title(ws, "A1", f"A1:{HIDDEN_LINE_COL}1")
+    ws["A1"] = "Quiz steps - screens and scoring"
     ws["A2"] = (
         f"Add a step: fill the next empty row (column Artwork). "
         f"Rows {QUESTIONS_FIRST_ROW}-{QUESTIONS_LAST_ROW} are ready (max {MAX_QUESTION_SLOTS} steps). "
-        "Question plays on = dropdown (Portrait / Landscape). Artwork plays on is automatic."
+        "Question plays on = dropdown. Score grid: 0–10 per profile per button (B1–B4)."
     )
-    style_instruction_row(ws, "A2", "A2:P2")
+    style_instruction_row(ws, "A2", f"A2:{HIDDEN_LINE_COL}2")
 
     headers = {
         COL_QNUM: "Step",
         COL_ARTWORK: "Artwork",
         COL_QUESTION_ON: "Question plays on",
         COL_ARTWORK_ON: "Artwork plays on",
-        COL_B1: "B1",
-        COL_B1 + 1: "B2",
-        COL_B1 + 2: "B3",
-        COL_B1 + 3: "B4",
         COL_TEXT_PLAYER: "Text player",
         COL_ART_PLAYER: "Art player",
         COL_TEXT_ASPECT: "Text aspect",
@@ -547,13 +749,17 @@ def build_questions_sheet(ws: Worksheet) -> None:
         COL_TEXT_FILE_FR: "Text file (FR)",
         COL_ART_FILE: "Art file",
     }
+    for choice in range(NUM_CHOICES):
+        for cat in range(NUM_CATEGORIES):
+            col = COL_WEIGHTS + choice * NUM_CATEGORIES + cat
+            headers[col] = f"B{choice + 1} {CAT_NAMES[cat]}"
     for col, title in headers.items():
+        editable = col in (COL_ARTWORK, COL_QUESTION_ON) or (
+            COL_WEIGHTS <= col <= COL_WEIGHTS_LAST
+        )
         apply_cell_style(
             ws.cell(row=3, column=col, value=title),
-            fill=EDIT_HEADER_FILL if col in (
-                COL_ARTWORK, COL_QUESTION_ON,
-                COL_B1, COL_B1 + 1, COL_B1 + 2, COL_B1 + 3,
-            ) else INPUT_HEADER_FILL,
+            fill=questions_sheet_fill(col, editable=editable, calc=False, header=True),
             font=HEADER_FONT,
             locked=True,
         )
@@ -562,10 +768,10 @@ def build_questions_sheet(ws: Worksheet) -> None:
     for slot in range(MAX_QUESTION_SLOTS):
         row = QUESTIONS_FIRST_ROW + slot
         if slot < len(defaults):
-            cats, question_on, artwork = defaults[slot]
+            default_cats, question_on, artwork = defaults[slot]
             fill_question_row(
                 ws, row,
-                cats=cats,
+                default_cats=default_cats,
                 question_on=question_on,
                 artwork=artwork,
             )
@@ -574,27 +780,31 @@ def build_questions_sheet(ws: Worksheet) -> None:
 
     ws.column_dimensions[get_column_letter(COL_TEXT_OFFSET)].hidden = True
     ws.column_dimensions[get_column_letter(COL_IMAGE_INDEX)].hidden = True
-
-    for col_letter in (*HIDDEN_CAT_COLS, HIDDEN_LINE_COL):
-        ws.column_dimensions[col_letter].hidden = True
+    ws.column_dimensions[HIDDEN_LINE_COL].hidden = True
 
     q_col = get_column_letter(COL_QUESTION_ON)
     screen_range = f"{q_col}{QUESTIONS_FIRST_ROW}:{q_col}{QUESTIONS_LAST_ROW}"
     add_list_validation(ws, screen_range, SCREEN_LIST)
-    for j in range(NUM_CHOICES):
-        prof_col = get_column_letter(COL_B1 + j)
-        add_list_validation(
-            ws,
-            f"{prof_col}{QUESTIONS_FIRST_ROW}:{prof_col}{QUESTIONS_LAST_ROW}",
-            PROFILE_LIST,
-        )
+    weight_col_start = get_column_letter(COL_WEIGHTS)
+    weight_col_end = get_column_letter(COL_WEIGHTS_LAST)
+    dv_weight = DataValidation(
+        type="whole",
+        operator="between",
+        formula1=str(SCORE_WEIGHT_MIN),
+        formula2=str(SCORE_WEIGHT_MAX),
+        allow_blank=True,
+    )
+    dv_weight.error = f"Enter an integer from {SCORE_WEIGHT_MIN} to {SCORE_WEIGHT_MAX}."
+    dv_weight.add(
+        f"{weight_col_start}{QUESTIONS_FIRST_ROW}:{weight_col_end}{QUESTIONS_LAST_ROW}"
+    )
+    ws.add_data_validation(dv_weight)
 
     center = Alignment(horizontal="center", vertical="center")
     for row in range(QUESTIONS_FIRST_ROW, QUESTIONS_LAST_ROW + 1):
-        for col in range(1, COL_ART_FILE + 1):
-            editable = col in (
-                COL_ARTWORK, COL_QUESTION_ON,
-                COL_B1, COL_B1 + 1, COL_B1 + 2, COL_B1 + 3,
+        for col in range(1, COL_WEIGHTS_LAST + 1):
+            editable = col in (COL_ARTWORK, COL_QUESTION_ON) or (
+                COL_WEIGHTS <= col <= COL_WEIGHTS_LAST
             )
             calc = col in (
                 COL_QNUM, COL_TEXT_OFFSET, COL_ARTWORK_ON, COL_IMAGE_INDEX,
@@ -603,14 +813,17 @@ def build_questions_sheet(ws: Worksheet) -> None:
             )
             apply_cell_style(
                 ws.cell(row=row, column=col),
-                fill=EDIT_FILL if editable else (CALC_FILL if calc else INPUT_FILL),
+                fill=questions_sheet_fill(col, editable=editable, calc=calc, header=False),
                 font=DATA_FONT,
                 alignment=center if col != COL_ARTWORK else Alignment(horizontal="left"),
                 border=DATA_BORDER,
                 locked=not editable,
             )
 
-    set_col_widths(ws, (6, 34, 16, 16, 4, 4, 11, 11, 11, 11, 10, 10, 12, 12, 14, 12))
+    # A–L: layout + file names. M–AB: score grid.
+    widths_before_weights = [6, 34, 18, 18, 8, 8, 12, 12, 14, 14, 16, 16]
+    widths_score_grid = [16] * (COL_WEIGHTS_LAST - COL_WEIGHTS + 1)
+    set_col_widths(ws, widths_before_weights + widths_score_grid)
     ws.freeze_panes = "A4"
     enable_sheet_protection(ws)
 
@@ -664,8 +877,8 @@ def build_workbook() -> Workbook:
         wb.create_sheet("SD WIZ1"),
         title="SD WIZ1",
         wiz_name="WIZ1 portrait display",
-        default_aspect=PORTRAIT_ASPECT,
-        rows=WIZ1_SD_ROWS,
+        wiz_player="WIZ1",
+        fixed_rows=WIZ1_FIXED_ROWS,
         tab_color="548235",
         first_row=WIZ1_FIRST_ROW,
         last_row=WIZ1_LAST_ROW,
@@ -674,8 +887,8 @@ def build_workbook() -> Workbook:
         wb.create_sheet("SD WIZ2"),
         title="SD WIZ2",
         wiz_name="WIZ2 landscape display",
-        default_aspect=LANDSCAPE_ASPECT,
-        rows=WIZ2_SD_ROWS,
+        wiz_player="WIZ2",
+        fixed_rows=WIZ2_FIXED_ROWS,
         tab_color="7030A0",
         first_row=WIZ2_FIRST_ROW,
         last_row=WIZ2_LAST_ROW,
@@ -699,6 +912,41 @@ def iter_question_rows_from_sheet(ws: Worksheet) -> List[int]:
     return rows
 
 
+def read_choice_weights(ws: Worksheet, row: int) -> List[Tuple[int, ...]]:
+    """Read 4×4 weight grid; fall back to DEFAULT_QUESTIONS template for blank cells."""
+    slot = row - QUESTIONS_FIRST_ROW
+    default_cats: Sequence[int] | None = None
+    if 0 <= slot < len(DEFAULT_QUESTIONS):
+        default_cats = DEFAULT_QUESTIONS[slot][0]
+    rows: List[Tuple[int, ...]] = []
+    for choice in range(NUM_CHOICES):
+        cells: List[int | None] = []
+        for cat in range(NUM_CATEGORIES):
+            val = ws.cell(row=row, column=COL_WEIGHTS + choice * NUM_CATEGORIES + cat).value
+            try:
+                cells.append(int(val))
+            except (TypeError, ValueError):
+                cells.append(None)
+        if all(v is None for v in cells):
+            if default_cats is not None:
+                rows.append(default_weights_for_primary(default_cats[choice]))
+            else:
+                rows.append(zero_weights_for_choice())
+            continue
+        filled: List[int] = []
+        for i, v in enumerate(cells):
+            if v is None:
+                if default_cats is not None:
+                    w = default_weights_for_primary(default_cats[choice])
+                    filled.append(w[i])
+                else:
+                    filled.append(0)
+            else:
+                filled.append(max(SCORE_WEIGHT_MIN, min(SCORE_WEIGHT_MAX, v)))
+        rows.append(tuple(filled))
+    return rows
+
+
 def emit_cpp_from_workbook(path: Path) -> str:
     wb = load_workbook(path, data_only=True)
     ws = wb["Questions"]
@@ -712,13 +960,6 @@ def emit_cpp_from_workbook(path: Path) -> str:
     for step, row in enumerate(question_rows, start=1):
         screen = screen_to_cpp(str(ws.cell(row=row, column=COL_QUESTION_ON).value))
         artwork = ws.cell(row=row, column=COL_ARTWORK).value or f"Q{step}"
-        cats = []
-        for c in range(NUM_CHOICES):
-            name = ws.cell(row=row, column=COL_B1 + c).value
-            try:
-                cats.append(CAT_CPP[CAT_NAMES.index(str(name).strip())])
-            except ValueError:
-                cats.append(CAT_CPP[0])
         off = ws.cell(row=row, column=COL_TEXT_OFFSET).value
         try:
             off = int(off)
@@ -728,8 +969,9 @@ def emit_cpp_from_workbook(path: Path) -> str:
                 off = int(off)
             except (TypeError, ValueError):
                 off = step
+        weights = read_choice_weights(ws, row)
         lines.append(f"  // Step {step} - {artwork}")
-        lines.append(f"  {{ {off}, {{ {', '.join(cats)} }}, {screen} }},")
+        lines.append(cpp_question_line(off, screen, weights))
     lines += ["};", "// --- END_QUESTIONNAIRE_CONFIG ---"]
     return "\n".join(lines)
 
