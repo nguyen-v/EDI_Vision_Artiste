@@ -419,9 +419,24 @@ def cpp_question_line(
     return f"  {{ {offset}, {screen}, {{ {rows} }} }},"
 
 
-def question_line_formula(row: int) -> str:
+def cpp_question_line_formula(row: int) -> str:
+    """Live C++ QUESTIONS[] entry from offset, screen, and score grid (column AC)."""
     art = f"{get_column_letter(COL_ARTWORK)}{row}"
-    return f'=IF({art}="","","")'
+    off = f"{get_column_letter(COL_TEXT_OFFSET)}{row}"
+    q_on = f"{get_column_letter(COL_QUESTION_ON)}{row}"
+    screen = f'IF({q_on}="Portrait","Portrait","Landscape")'
+    button_rows: List[str] = []
+    for choice in range(NUM_CHOICES):
+        cells = [
+            f"{get_column_letter(COL_WEIGHTS + choice * NUM_CATEGORIES + cat)}{row}"
+            for cat in range(NUM_CATEGORIES)
+        ]
+        button_rows.append('" { "&' + '&", "&'.join(cells) + '&" }"')
+    weights = '"{ "&' + '&", "&'.join(button_rows) + '&" }"'
+    return (
+        f'=IF({art}="","",'
+        f'"  {{ "&{off}&", "&{screen}&", "&{weights}&" }} }},")'
+    )
 
 
 def step_formula(row: int) -> str:
@@ -476,8 +491,6 @@ def fill_question_row(
         value=f"={off_col}{row}+{QUESTION_IMAGE_OFFSET_DELTA}",
     )
     if default_cats is not None:
-        off_val = row - (QUESTIONS_FIRST_ROW - 1)
-        screen = question_on or "Portrait"
         weights = default_weights_for_question(default_cats)
         for choice in range(NUM_CHOICES):
             w = weights[choice]
@@ -487,11 +500,6 @@ def fill_question_row(
                     column=COL_WEIGHTS + choice * NUM_CATEGORIES + cat,
                     value=w[cat],
                 )
-        ws.cell(
-            row=row,
-            column=COL_HIDDEN_LINE,
-            value=cpp_question_line(off_val, screen, weights),
-        )
     ws.cell(
         row=row, column=COL_TEXT_PLAYER,
         value=f'=IF({q_col}{row}="Portrait","WIZ1","WIZ2")',
@@ -516,8 +524,7 @@ def fill_question_row(
         row=row, column=COL_ART_FILE,
         value=f'=IF({get_column_letter(COL_ARTWORK)}{row}="","",TEXT({img_col}{row},"000")&".mp4")',
     )
-    if default_cats is None:
-        ws.cell(row=row, column=COL_HIDDEN_LINE, value=question_line_formula(row))
+    ws.cell(row=row, column=COL_HIDDEN_LINE, value=cpp_question_line_formula(row))
 
 
 def codegen_question_ref(row: int) -> str:
@@ -547,8 +554,9 @@ def build_guide_sheet(ws: Worksheet) -> None:
         "  Sum across steps; highest wins. Tie-break: Emotions, Conteur, Matiere, Realiste.",
         "",
         "Add a question: on Questions sheet, fill the next empty row (Artwork column).",
-        "  Step number updates automatically. Copy dropdowns from the row above if needed.",
-        "  Then copy CodeGen column A into QuestionnaireConfig.h (NUM_QUESTIONS + QUESTIONS[]).",
+        "  Clear Artwork to remove a step (do not delete rows — CodeGen uses fixed row refs).",
+        "  CodeGen column A updates when you edit scores, screen, or Artwork (recalc in Excel).",
+        "  Or run: python scripts/generate_media_workbook.py --emit-cpp",
         "  SD WIZ1 / SD WIZ2 update automatically from Questions (clear Artwork to remove a step).",
         "",
         "Sheets: Questions | SD WIZ1 | SD WIZ2 | CodeGen",
@@ -834,9 +842,9 @@ def build_codegen_sheet(wb: Workbook) -> None:
     style_merged_title(ws, "A1", "A1:E1")
     ws["A1"] = "QuestionnaireConfig.h generator"
     ws["A2"] = (
-        "Copy column A (values shown) from BEGIN through END into QuestionnaireConfig.h. "
-        "Includes NUM_QUESTIONS and QUESTIONS[]. Skip empty lines in the array. "
-        "Row count = filled Artwork cells on Questions sheet."
+        "Copy column A from BEGIN through END into QuestionnaireConfig.h. "
+        "Lines pull live from Questions (scores, screen, step). Skip blank array lines. "
+        "NUM_QUESTIONS = COUNTA(Artwork). Recalculate the sheet after edits (F9 in Excel)."
     )
     style_instruction_row(ws, "A2", "A2:E2")
     ws.cell(row=CODEGEN_BEGIN_ROW, column=1, value="// --- BEGIN_QUESTIONNAIRE_CONFIG ---")

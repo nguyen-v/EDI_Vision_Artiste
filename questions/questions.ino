@@ -25,6 +25,25 @@ using namespace QuestionnaireConfig;
 
 static const uint8_t CHOICE_PINS[NUM_CHOICES] = { 8, A0, A1, 9 };
 static const uint8_t RESET_PIN = A2;
+// Language selector — LANGUAGE_PINS[lang] = D pin that reads LOW for that language.
+//   [0] EN   [1] FR   [2] DE   [3] IT   (indices fixed; match SD file blocks on WIZ1)
+//
+// Software remap (no soldering): if detents always fire the same pins CW (e.g. D4→D5→D6→D7),
+// permute this array so each language points at the pin for the detent where you want that language.
+// Each of the four pin numbers must appear exactly once.
+//
+//   Detents CW fire:  D4       D5       D6       D7
+//   Default array:    EN       FR       DE       IT     →  { 4, 5, 6, 7 }
+//   Want CW read:     FR       IT       DE       EN     →  { 7, 4, 6, 5 }
+//                     (FR←4    IT←5    DE←6    EN←7)
+//
+//   Detents CW fire:  D4       D5       D6       D7
+//   Want CW read:     IT       FR       EN       DE     →  { 6, 5, 7, 4 }
+//
+// If detents CW fire pins in a non-monotonic order (e.g. D5→D7→D6→D4), the same idea applies:
+// list which pin is LOW at each CW stop, then set LANGUAGE_PINS[lang] for that language.
+//
+// Active build: EN→D4  FR→D5  DE→D6  IT→D7  →  { 4, 5, 6, 7 }.
 static const uint8_t LANGUAGE_PINS[LanguageSelector::NUM_LANGUAGES] = { 4, 5, 6, 7 };
 
 static const uint8_t WIZ1_RX_PIN = 11;
