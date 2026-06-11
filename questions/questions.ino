@@ -53,7 +53,7 @@ static const uint8_t WIZ2_TX_PIN = 12;
 
 static const unsigned long SPRITE_BAUD = 9600;
 static const unsigned long SPRITE_BOOT_DELAY_MS = 500;
-static const unsigned long SPRITE_INTER_CMD_GAP_MS = 3;
+static const unsigned long SPRITE_INTER_CMD_GAP_MS = 20;
 static const bool SPRITE_BOOT_SELF_TEST = false;
 static const unsigned long LANGUAGE_DEBOUNCE_MS = 40;
 static const unsigned long BUTTON_DEBOUNCE_MS = 30;
@@ -153,7 +153,7 @@ static void playQuiet(MedeaWizSprite &wiz, uint8_t fileIndex) {
   }
 }
 
-static void logAndPlay(
+static bool logAndPlay(
   MedeaWizSprite &wiz,
   const __FlashStringHelper *wizLabel,
   const __FlashStringHelper *role,
@@ -176,11 +176,20 @@ static void logAndPlay(
   Serial.print(fileIndex, HEX);
   Serial.print(F(")"));
 
-  if (!wiz.playFile(fileIndex)) {
-    Serial.println(F(" FAIL"));
-    return;
+  if (wiz.playFile(fileIndex)) {
+    Serial.println(F(" TX ok"));
+    return true;
   }
-  Serial.println(F(" TX ok"));
+
+  Serial.println(F(" FAIL (retry)"));
+  delay(SPRITE_INTER_CMD_GAP_MS);
+  if (wiz.playFile(fileIndex)) {
+    Serial.println(F(" TX ok (retry)"));
+    return true;
+  }
+
+  Serial.println(F(" FAIL"));
+  return false;
 }
 
 static void commandDualMedia(
@@ -192,9 +201,12 @@ static void commandDualMedia(
 ) {
   activeWiz1File = wiz1File;
   activeWiz2File = wiz2File;
-  logAndPlay(wiz1, F("WIZ1"), role1, wiz1File);
+  const bool wiz1Ok = logAndPlay(wiz1, F("WIZ1"), role1, wiz1File);
   delay(SPRITE_INTER_CMD_GAP_MS);
-  logAndPlay(wiz2, F("WIZ2"), role2, wiz2File);
+  const bool wiz2Ok = logAndPlay(wiz2, F("WIZ2"), role2, wiz2File);
+  if (!wiz1Ok || !wiz2Ok) {
+    Serial.println(F("dual play incomplete"));
+  }
   markMediaCommand(now);
 }
 

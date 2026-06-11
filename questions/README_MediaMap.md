@@ -10,6 +10,7 @@ File: **`MediaMap_workbook.xlsx`** (English)
 4. **Step** updates automatically. **Image index** and SD file names are computed (no manual file numbers).
 5. **Remove a step:** clear **Artwork** on that row (do not delete the row — formulas use fixed row numbers).
 6. **CodeGen** sheet: column A follows Questions live (scores, screen, step). Recalculate the workbook after edits (Excel: **F9**; LibreOffice: recalculate all). Or run `python3 scripts/generate_media_workbook.py --emit-cpp` and paste into `QuestionnaireConfig.h`.
+   Each `QUESTIONS[]` line must be `{ offset, Portrait|Landscape, { weights… } }`. The pre-8130f96 format `{ offset, { CAT_… }, screen }` swaps text/artwork WIZ routing and breaks language switching.
 7. **SD WIZ1** / **SD WIZ2** follow the Questions sheet automatically (recalculate after edits).
 
 SD file numbering: same slot index on both cards per step (questions 1-13 use indices 1-13). **Idle text** = 4 language files on WIZ1 (`000`, `032`, ...). **Idle artwork** = single `000.mp4` on WIZ2. **Profiles** = indices **17-20** (text per language on WIZ1, one artwork per profile on WIZ2) so they do not overlap the last question at index 13.
