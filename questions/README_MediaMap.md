@@ -51,6 +51,49 @@ Match the **Aspect** column on each SD sheet row.
 | **Personality text** (WIZ1, indices 17–20 × language blocks) | **60 s** |
 | **Personality artwork** (WIZ2, indices 17–20, all languages) | **60 s** |
 
+### Convert images to MP4
+
+From the project root, use **`scripts/convert_image_to_medeawiz.sh`** to turn a still image (PNG, JPEG, …) into a MedeaWiz-ready clip. The script loops the image at 1 fps, applies portrait rotation or landscape scaling, and adds a silent AAC track.
+
+**Workbook-linked mode** (recommended): pass the step and part; filename, WIZ player, portrait/landscape, and clip length come from **`MediaMap_workbook.xlsx`**.
+
+```bash
+# Question text (per language) — e.g. Q3 French intro on WIZ1
+./scripts/convert_image_to_medeawiz.sh artwork.png --q 3 --part text --lang FR
+
+# Question artwork (language-independent) — e.g. Q3 image on WIZ2
+./scripts/convert_image_to_medeawiz.sh magritte.png --q 3 --part image
+
+# Idle intro text (WIZ1, per language) and idle artwork (WIZ2)
+./scripts/convert_image_to_medeawiz.sh intro_en.png --idle --part text --lang EN
+./scripts/convert_image_to_medeawiz.sh idle_art.png --idle --part image
+
+# Personality profile text (WIZ1) — emotions, realiste, matiere, conteur
+./scripts/convert_image_to_medeawiz.sh profile_de.png --profile emotions --part text --lang DE
+./scripts/convert_image_to_medeawiz.sh profile_art.png --profile emotions --part image
+```
+
+By default, encoded files land under **`videos/out/sd_wiz1/`** and **`videos/out/sd_wiz2/`**. Copy each folder onto the matching SD card (WIZ1 card ← `sd_wiz1`, WIZ2 card ← `sd_wiz2`).
+
+Use **`--dry-run`** to print the resolved slot without encoding. Use **`--out-dir DIR`** to write elsewhere (e.g. a staging folder before copying to the cards).
+
+**Manual mode** (when you already know mode and filename):
+
+```bash
+./scripts/convert_image_to_medeawiz.sh portrait intro_en.png 000.mp4 --type idle
+./scripts/convert_image_to_medeawiz.sh landscape artwork_01.png 001.mp4 --type question
+```
+
+| Option | Purpose |
+|--------|---------|
+| `--type idle\|question\|profile` | Clip length: 600 s / 70 s / 60 s (manual mode; set automatically in workbook mode) |
+| `--duration SEC` | Override length |
+| `--fit contain\|cover` | Letterbox (default) or crop to fill |
+| `--no-audio` | Omit AAC track |
+| `--workbook PATH` | Alternate workbook path |
+
+Requires **ffmpeg** and **ffprobe** on `PATH`, and **`pip install openpyxl`** for workbook resolution (`medeawiz_workbook.py`).
+
 ### Firmware timers
 
 | State | Behaviour |
