@@ -12,7 +12,7 @@ Naming matches MediaMap_workbook.xlsx / QuestionnaireConfig.h:
   WIZ2 file index     = same slot as text offset (000 idle, 001 step 1, ?)
 
 Clips are H.264 yuv420p, 1920x1080 (WIZ1 rotated), AAC.
-Defaults: 70s quiz, 600s idle, 60s profile. See questions/README_MediaMap.md.
+Defaults: 70s quiz, 600s idle, 60s profile. See README.md.
 Requires ffmpeg on PATH.
 
 Example:

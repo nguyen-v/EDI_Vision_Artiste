@@ -1,6 +1,6 @@
 # MediaMap workbook ? Vision Artiste
 
-File: **`MediaMap_workbook.xlsx`** (English)
+File: **`questions/MediaMap_workbook.xlsx`** (English)
 
 ## Add or remove a question
 
@@ -59,7 +59,7 @@ Match the **Aspect** column on each SD sheet row.
 2. [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) — unzip, add the `bin` folder to **Path** (Environment Variables)
 3. In the repo folder: `pip install openpyxl`
 
-**Convert** (from the repo root). The script reads **`MediaMap_workbook.xlsx`** for filename, WIZ card, and orientation:
+**Convert** (from the repo root). The script reads **`questions/MediaMap_workbook.xlsx`** for filename, WIZ card, and orientation:
 
 ```cmd
 python scripts/convert_image_to_medeawiz.py artwork.png --q 3 --part text --lang FR
